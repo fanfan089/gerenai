@@ -349,11 +349,44 @@ ${convo}
     h = h.replace(/^###\s+(.+)$/gm, '<strong>$1</strong>');
     h = h.replace(/^##\s+(.+)$/gm, '<strong>$1</strong>');
     h = h.replace(/^#\s+(.+)$/gm, '<strong>$1</strong>');
+    h = renderTables(h);
     h = h.replace(/^\s*[-*]\s+(.+)$/gm, '<li>$1</li>');
     h = h.replace(/(<li>[\s\S]*?<\/li>)(?!\s*<li>)/g, '<ul>$1</ul>');
     h = h.replace(/\n/g, '<br>');
     h = h.replace(/<\/ul><br>/g, '</ul>').replace(/<br><ul>/g, '<ul>');
+    h = h.replace(/<\/table><br>/g, '</table>').replace(/<br><div class="md-table-wrap">/g, '<div class="md-table-wrap">');
     return h;
+  }
+
+  // 把 Markdown 表格解析成 HTML 表格（在换行转 <br> 之前调用）
+  function renderTables(h) {
+    const lines = h.split('\n');
+    const out = [];
+    let i = 0;
+    const rowRe = /^\s*\|.*\|\s*$/;
+    const sepRe = /^\s*\|[\s:|\-]+\|\s*$/;
+    const cells = (line) => line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(s => s.trim());
+    while (i < lines.length) {
+      if (rowRe.test(lines[i]) && i + 1 < lines.length && sepRe.test(lines[i + 1])) {
+        const head = cells(lines[i]);
+        i += 2;
+        const rows = [];
+        while (i < lines.length && rowRe.test(lines[i])) { rows.push(cells(lines[i])); i++; }
+        let t = '<div class="md-table-wrap"><table class="md-table"><thead><tr>';
+        head.forEach(c => { t += `<th>${c}</th>`; });
+        t += '</tr></thead><tbody>';
+        rows.forEach(r => {
+          t += '<tr>';
+          for (let k = 0; k < head.length; k++) t += `<td>${r[k] != null ? r[k] : ''}</td>`;
+          t += '</tr>';
+        });
+        t += '</tbody></table></div>';
+        out.push(t);
+      } else {
+        out.push(lines[i]); i++;
+      }
+    }
+    return out.join('\n');
   }
 
   // 把历史消息转成 API 的 content：纯文字用字符串，带图片用内容块数组
