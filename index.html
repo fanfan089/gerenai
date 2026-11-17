@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0a84ff">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<title>我的 AI 助手</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="app">
+
+  <!-- 顶部栏 -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <div class="logo-dot"></div>
+      <div class="topbar-title">
+        <span class="app-name">我的 AI 助手</span>
+        <span class="app-sub" id="ctxLabel">自由聊天</span>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <span class="mem-chip" id="memChip" title="记忆状态">
+        <span class="mem-chip-dot"></span><span id="memChipText">记忆已开启</span>
+      </span>
+    </div>
+  </header>
+
+  <!-- 主体 -->
+  <main id="main">
+
+    <!-- ===== 对话页 ===== -->
+    <section class="view active" id="view-chat">
+      <div class="mode-switch" id="modeSwitch">
+        <button class="mode-btn active" data-mode="chat">💬 自由聊天</button>
+        <button class="mode-btn" data-mode="exam">🎯 考试规划</button>
+      </div>
+      <div class="exam-banner" id="examBanner" hidden>
+        <div class="exam-banner-info">
+          <span class="exam-banner-name" id="bannerName"></span>
+          <span class="exam-banner-days" id="bannerDays"></span>
+        </div>
+        <div class="exam-banner-bar"><div class="exam-banner-fill" id="bannerFill"></div></div>
+      </div>
+
+      <div class="msg-list" id="msgList">
+        <div class="empty-chat" id="emptyChat">
+          <div class="empty-icon" id="emptyIcon">💬</div>
+          <h2 id="emptyTitle">你的 AI 聊天伙伴</h2>
+          <p id="emptyDesc">什么都能聊——学习、工作、生活、答疑、写东西。你说过的每件事我都会长期记住，聊得越久越懂你。想专门规划考试时，点上方「考试规划」切换。</p>
+          <div class="quick-starts" id="quickStarts">
+            <button class="quick-btn" data-q="你能帮我做什么？">✨ 你能帮我做什么</button>
+            <button class="quick-btn" data-q="帮我梳理一下最近让我纠结的事情">🧩 帮我理清一件事</button>
+            <button class="quick-btn" data-q="给我讲讲一个有意思的知识点">📖 讲点有意思的</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="typing" id="typing" hidden><span></span><span></span><span></span></div>
+
+      <div class="composer">
+        <div class="composer-tools">
+          <button class="tool-btn" id="btnMemoryHint" title="查看本次将注入的记忆">🧠 记忆</button>
+          <button class="tool-btn" id="btnClearChat" title="清空当前对话">🗑 清空对话</button>
+          <span class="composer-spacer"></span>
+          <span class="token-hint" id="tokenHint"></span>
+        </div>
+        <div class="composer-box">
+          <textarea id="input" rows="1" placeholder="输入消息，什么都能聊…"></textarea>
+          <button class="send-btn" id="sendBtn" title="发送">
+            <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M3.4 20.4l17.45-7.48a1 1 0 000-1.84L3.4 3.6a.993.993 0 00-1.39.91L2 9.12c0 .5.37.93.87.99L17 12 2.87 13.88c-.5.07-.87.5-.87 1l.01 4.61c0 .71.73 1.2 1.39.91z"/></svg>
+          </button>
+        </div>
+        <div class="stop-row" id="stopRow" hidden><button class="stop-btn" id="stopBtn">■ 停止生成</button></div>
+      </div>
+    </section>
+
+    <!-- ===== 考试页 ===== -->
+    <section class="view" id="view-exams">
+      <div class="page-head">
+        <h2>我的考试</h2>
+        <button class="primary-btn" id="btnAddExam">+ 添加考试</button>
+      </div>
+      <div class="exam-list" id="examList"></div>
+      <div class="tip-card">
+        <b>小提示</b>
+        <p>选中一场考试后，对话会围绕它展开。AI 会把考试日期、科目、你的进度都记在长期记忆里，每天对话都会自动带上。</p>
+      </div>
+    </section>
+
+    <!-- ===== 记忆页 ===== -->
+    <section class="view" id="view-memory">
+      <div class="page-head"><h2>长期记忆</h2><button class="ghost-btn" id="btnConsolidate">🧠 立即整理</button></div>
+
+      <div class="mem-stats" id="memStats"></div>
+
+      <div class="card">
+        <div class="card-title">🎯 核心档案 <span class="card-sub">每次对话都会带上</span></div>
+        <div id="profileView" class="profile-view"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">📚 滚动摘要 <span class="card-sub">旧对话压缩后的记忆</span></div>
+        <div id="digestView" class="digest-view"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">💾 数据管理</div>
+        <div class="data-actions">
+          <button class="ghost-btn" id="btnExport">导出全部数据</button>
+          <button class="ghost-btn" id="btnImport">导入数据</button>
+          <input type="file" id="importFile" accept="application/json" hidden>
+        </div>
+        <p class="hint">所有数据只存在你手机本地（IndexedDB），不上传任何服务器。换手机时用导出/导入迁移。</p>
+      </div>
+    </section>
+
+    <!-- ===== 设置页 ===== -->
+    <section class="view" id="view-settings">
+      <div class="page-head"><h2>设置</h2></div>
+
+      <div class="card">
+        <div class="card-title">🔑 DeepSeek API</div>
+        <label class="field">
+          <span>API Key</span>
+          <input type="password" id="setApiKey" placeholder="sk-..." autocomplete="off">
+        </label>
+        <label class="field">
+          <span>接口地址 (Base URL)</span>
+          <input type="text" id="setBaseUrl" placeholder="https://api.deepseek.com">
+        </label>
+        <label class="field">
+          <span>模型</span>
+          <select id="setModel">
+            <option value="deepseek-flash">deepseek-flash（便宜·推荐）</option>
+            <option value="deepseek-v4-pro">deepseek-v4-pro（更强）</option>
+          </select>
+        </label>
+        <p class="hint">还没有 Key？去 <a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener">platform.deepseek.com</a> 创建，充值 10 元能用很久。Key 只存在本机。</p>
+      </div>
+
+      <div class="card">
+        <div class="card-title">⚙️ 对话与记忆</div>
+        <label class="switch-row">
+          <div><div class="switch-label">深度思考</div><div class="switch-desc">复杂规划更靠谱，速度稍慢</div></div>
+          <input type="checkbox" id="setThinking"><span class="switch"></span>
+        </label>
+        <label class="field">
+          <span>携带最近对话条数 <b id="ctxVal">12</b></span>
+          <input type="range" id="setCtx" min="4" max="40" value="12">
+        </label>
+        <label class="switch-row">
+          <div><div class="switch-label">启用长期记忆</div><div class="switch-desc">档案 + 摘要 + 检索注入</div></div>
+          <input type="checkbox" id="setMemory" checked><span class="switch"></span>
+        </label>
+        <label class="switch-row">
+          <div><div class="switch-label">自动整理记忆</div><div class="switch-desc">每 30 条新对话自动压缩摘要</div></div>
+          <input type="checkbox" id="setAutoConsolidate" checked><span class="switch"></span>
+        </label>
+      </div>
+
+      <div class="card">
+        <div class="card-title">🔌 连接测试</div>
+        <button class="primary-btn" id="btnTest" style="width:100%">测试 API 连接</button>
+        <p class="hint" id="testResult"></p>
+      </div>
+
+      <div class="about">考试规划官 · 自托管版　|　数据属于你自己</div>
+    </section>
+
+  </main>
+
+  <!-- 底部导航 -->
+  <nav class="tabbar">
+    <button class="tab active" data-view="chat"><span class="tab-ico">💬</span><span>对话</span></button>
+    <button class="tab" data-view="exams"><span class="tab-ico">📚</span><span>考试</span></button>
+    <button class="tab" data-view="memory"><span class="tab-ico">🧠</span><span>记忆</span></button>
+    <button class="tab" data-view="settings"><span class="tab-ico">⚙️</span><span>设置</span></button>
+  </nav>
+
+</div>
+
+<!-- 弹窗：添加/编辑考试 -->
+<div class="modal" id="examModal" hidden>
+  <div class="modal-mask" data-close></div>
+  <div class="modal-sheet">
+    <div class="modal-head"><h3 id="examModalTitle">添加考试</h3><button class="modal-close" data-close>✕</button></div>
+    <label class="field"><span>考试名称</span><input id="exName" placeholder="例如：2026 考研数学"></label>
+    <label class="field"><span>考试日期</span><input type="date" id="exDate"></label>
+    <label class="field"><span>科目 / 任务（每行一个）</span><textarea id="exSubjects" rows="5" placeholder="高等数学&#10;线性代数&#10;概率论"></textarea></label>
+    <div class="modal-actions">
+      <button class="ghost-btn" data-close>取消</button>
+      <button class="primary-btn" id="btnSaveExam">保存</button>
+      <button class="danger-btn" id="btnDeleteExam" hidden>删除</button>
+    </div>
+  </div>
+</div>
+
+<!-- 弹窗：记忆详情 -->
+<div class="modal" id="memModal" hidden>
+  <div class="modal-mask" data-close></div>
+  <div class="modal-sheet">
+    <div class="modal-head"><h3>本次对话注入的记忆</h3><button class="modal-close" data-close>✕</button></div>
+    <pre id="memModalBody" class="mem-pre"></pre>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="toast" hidden></div>
+
+<script src="db.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
