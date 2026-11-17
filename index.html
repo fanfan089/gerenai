@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
-<meta name="theme-color" content="#0a84ff">
+<meta name="theme-color" content="#5b5bf5">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="mobile-web-app-capable" content="yes">
@@ -72,13 +72,18 @@
           <span class="composer-spacer"></span>
           <span class="token-hint" id="tokenHint"></span>
         </div>
+        <div class="attach-preview" id="attachPreview" hidden></div>
         <div class="composer-box">
+          <button class="attach-btn" id="btnAttach" title="添加图片">
+            <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M21 19V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2zM8.5 13.5l2.5 3 3.5-4.5 4.5 6H5l3.5-4.5zM8.5 8a1.5 1.5 0 110-3 1.5 1.5 0 010 3z"/></svg>
+          </button>
           <textarea id="input" rows="1" placeholder="输入消息，什么都能聊…"></textarea>
           <button class="send-btn" id="sendBtn" title="发送">
             <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M3.4 20.4l17.45-7.48a1 1 0 000-1.84L3.4 3.6a.993.993 0 00-1.39.91L2 9.12c0 .5.37.93.87.99L17 12 2.87 13.88c-.5.07-.87.5-.87 1l.01 4.61c0 .71.73 1.2 1.39.91z"/></svg>
           </button>
         </div>
         <div class="stop-row" id="stopRow" hidden><button class="stop-btn" id="stopBtn">■ 停止生成</button></div>
+        <input type="file" id="imageInput" accept="image/*" multiple hidden>
       </div>
     </section>
 
@@ -210,6 +215,12 @@
     <div class="modal-head"><h3>本次对话注入的记忆</h3><button class="modal-close" data-close>✕</button></div>
     <pre id="memModalBody" class="mem-pre"></pre>
   </div>
+</div>
+
+<!-- 弹窗：图片预览 -->
+<div class="modal" id="imgModal" hidden>
+  <div class="modal-mask" data-close></div>
+  <div class="img-preview-wrap" data-close><img id="imgPreview" src="" alt="图片预览"></div>
 </div>
 
 <!-- Toast -->

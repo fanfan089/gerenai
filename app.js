@@ -39,7 +39,47 @@
     controller: null,
     streaming: false,
     lastContext: null,
+    pendingImages: [],   // 待发送的已压缩图片 data URL 数组
   };
+
+  // ---------- 图片处理 ----------
+  const MAX_IMG_SIDE = 1280;   // 压缩后最长边，够模型看清且省 token
+  const MAX_IMGS = 6;          // 单条消息最多图片数
+
+  // 压缩图片为 base64 data URL（canvas 等比缩小 + JPEG 编码）
+  function compressImage(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('读取图片失败'));
+      reader.onload = () => {
+        const img = new Image();
+        img.onerror = () => reject(new Error('图片解码失败'));
+        img.onload = () => {
+          let { width, height } = img;
+          const scale = Math.min(1, MAX_IMG_SIDE / Math.max(width, height));
+          width = Math.max(1, Math.round(width * scale));
+          height = Math.max(1, Math.round(height * scale));
+          const canvas = document.createElement('canvas');
+          canvas.width = width; canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#fff';               // JPEG 无透明通道，白底兜底
+          ctx.fillRect(0, 0, width, height);
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', 0.82));
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function renderPendingImages() {
+    const box = $('#attachPreview');
+    box.innerHTML = state.pendingImages.map((src, i) =>
+      `<div class="thumb"><img src="${src}" alt="待发送图片 ${i + 1}"><button class="thumb-del" data-idx="${i}" title="移除">×</button></div>`
+    ).join('');
+    box.hidden = state.pendingImages.length === 0;
+  }
 
   // 当前对话的存储分区：自由聊天用 GLOBAL，考试模式用对应考试 id
   function activeKey() {
@@ -179,7 +219,10 @@ ${examBlock}`;
     const digestList = await DB.digestsByExam(examId);
     const prevDigest = digestList.length ? digestList[digestList.length - 1].content : '（无）';
 
-    const convo = toCompress.map(m => `${m.role === 'user' ? '用户' : '助手'}：${m.content}`).join('\n');
+    const convo = toCompress.map(m => {
+      const c = m.content || (m.images && m.images.length ? '（发送了一张图片）' : '');
+      return `${m.role === 'user' ? '用户' : '助手'}：${c}`;
+    }).join('\n');
     const prompt = `你在维护一个考试规划助手的"长期记忆档案"。请根据【过往摘要】【现有档案】【新对话】，输出更新后的记忆。
 
 【过往摘要】
@@ -276,12 +319,14 @@ ${convo}
     const wrap = document.createElement('div');
     wrap.className = 'msg ' + (m.role === 'user' ? 'me' : 'ai');
     const avatar = m.role === 'user' ? '我' : '🎓';
-    const name = m.role === 'user' ? '' : '<div class="msg-name">考试规划官</div>';
+    const name = m.role === 'user' ? '' : '<div class="msg-name">我的 AI 助手</div>';
+    const imgsHtml = (!streamEl && m.images && m.images.length)
+      ? `<div class="msg-images">${m.images.map((src, i) => `<img src="${src}" data-preview="${i}" alt="图片 ${i + 1}">`).join('')}</div>` : '';
     wrap.innerHTML = `
       <div class="msg-avatar">${avatar}</div>
       <div class="msg-body">
         ${name}
-        <div class="bubble md">${streamEl ? '' : md(m.content)}</div>
+        <div class="bubble md">${imgsHtml}${streamEl ? '' : md(m.content)}</div>
         ${m.layers && m.layers.length ? `<div class="mem-used"><span class="dot"></span>已调用记忆：${m.layers.join(' · ')}</div>` : ''}
       </div>`;
     list.appendChild(wrap);
@@ -311,16 +356,32 @@ ${convo}
     return h;
   }
 
+  // 把历史消息转成 API 的 content：纯文字用字符串，带图片用内容块数组
+  function toContent(m) {
+    if (m.images && m.images.length) {
+      const parts = [];
+      if (m.content) parts.push({ type: 'text', text: m.content });
+      for (const src of m.images) parts.push({ type: 'image_url', image_url: { url: src, detail: 'low' } });
+      return parts;
+    }
+    return m.content || '';
+  }
+
   async function send(text) {
     text = (text || '').trim();
-    if (!text || state.streaming) return;
+    // 取走待发送图片（即使没有文字，只要发了图片就允许发送）
+    const images = state.pendingImages.slice();
+    state.pendingImages = [];
+    renderPendingImages();
+    if ((!text && !images.length) || state.streaming) return;
     if (!S.apiKey) { toast('请先到「设置」里填写 DeepSeek API Key'); go('settings'); return; }
 
     const exam = state.chatMode === 'exam' ? (state.exams.find(e => e.id === state.examId) || null) : null;
-    const sys = await buildSystem(exam, text);
+    const sys = await buildSystem(exam, text || '（用户发送了一张图片）');
     state.lastContext = sys;
 
     const userMsg = { id: uid(), examId: activeKey(), role: 'user', content: text, ts: now() };
+    if (images.length) userMsg.images = images;
     state.messages.push(userMsg);
     await DB.put('messages', userMsg);
     appendMsgBubble(userMsg);
@@ -329,8 +390,8 @@ ${convo}
     const ctxCount = S.ctx;
     const history = state.messages.filter(m => m.role !== 'system' && m.id !== userMsg.id).slice(-ctxCount);
     const payloadMsgs = [{ role: 'system', content: sys.text }];
-    for (const m of history) payloadMsgs.push({ role: m.role, content: m.content });
-    payloadMsgs.push({ role: 'user', content: text });
+    for (const m of history) payloadMsgs.push({ role: m.role, content: toContent(m) });
+    payloadMsgs.push({ role: 'user', content: toContent(userMsg) });
 
     setStreaming(true);
     $('#typing').hidden = false;
@@ -663,6 +724,38 @@ ${convo}
       e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
     });
     $('#stopBtn').addEventListener('click', () => state.controller?.abort());
+
+    // ---- 图片：选择 / 压缩 / 删除 / 预览 ----
+    $('#btnAttach').addEventListener('click', () => $('#imageInput').click());
+    $('#imageInput').addEventListener('change', async e => {
+      const files = Array.from(e.target.files || []).filter(f => f.type.startsWith('image/'));
+      e.target.value = '';
+      if (!files.length) return;
+      if (state.pendingImages.length >= MAX_IMGS) { toast(`一条消息最多 ${MAX_IMGS} 张图片`); return; }
+      toast('正在处理图片…');
+      let added = 0;
+      for (const f of files) {
+        if (state.pendingImages.length >= MAX_IMGS) { toast(`一条消息最多 ${MAX_IMGS} 张图片`); break; }
+        try { state.pendingImages.push(await compressImage(f)); added++; }
+        catch (err) { console.error(err); toast('有图片处理失败，已跳过'); }
+      }
+      if (added) renderPendingImages();
+    });
+    // 删除待发送图片（事件委托）
+    $('#attachPreview').addEventListener('click', e => {
+      const del = e.target.closest('.thumb-del');
+      if (!del) return;
+      state.pendingImages.splice(+del.dataset.idx, 1);
+      renderPendingImages();
+    });
+    // 点击消息里的图片 → 放大预览（事件委托）
+    $('#msgList').addEventListener('click', e => {
+      const im = e.target.closest('img[data-preview]');
+      if (!im) return;
+      $('#imgPreview').src = im.src;
+      $('#imgModal').hidden = false;
+    });
+
     $('#btnClearChat').addEventListener('click', async () => {
       if (!confirm('清空当前对话记录？（长期记忆档案和摘要会保留）')) return;
       const id = activeKey();
