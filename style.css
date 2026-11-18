@@ -167,6 +167,16 @@ main{flex:1;min-height:0;position:relative}
 .mem-used{font-size:10px;color:var(--text-3);margin-top:6px;display:flex;align-items:center;gap:5px;padding:0 3px}
 .msg.me .mem-used{justify-content:flex-end}
 .mem-used .dot{width:5px;height:5px;border-radius:50%;background:var(--brand)}
+/* 语音朗读按钮 */
+.msg-actions{display:flex;margin-top:5px;padding:0 2px}
+.voice-btn{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);background:var(--surface);
+  color:var(--text-2);font-size:10.5px;font-weight:600;padding:3px 9px;border-radius:14px;cursor:pointer;
+  transition:all .18s cubic-bezier(.2,.8,.2,1);box-shadow:var(--shadow-sm)}
+.voice-btn svg{width:13px;height:13px;flex-shrink:0}
+.voice-btn:active{transform:scale(.94)}
+.voice-btn.speaking{background:var(--brand-soft);color:var(--brand);border-color:var(--brand)}
+.voice-btn.speaking svg{animation:voicePulse 1s ease-in-out infinite}
+@keyframes voicePulse{50%{opacity:.35}}
 
 /* 正在输入 */
 .typing{display:flex;gap:5px;padding:2px 0 12px 48px;flex-shrink:0}

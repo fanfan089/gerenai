@@ -303,13 +303,14 @@ ${convo}
     const empty = $('#emptyChat');
     const nonSystem = state.messages.filter(m => m.role !== 'system');
     if (!nonSystem.length) {
-      list.innerHTML = '';
-      list.appendChild(empty);
+      list.querySelectorAll('.msg').forEach(n => n.remove());
+      if (!empty.parentNode) list.appendChild(empty);
       empty.hidden = false;
       return;
     }
     empty.hidden = true;
-    list.innerHTML = '';
+    // 只移除气泡，保留 #emptyChat 节点本身（否则 setChatMode 里访问其子元素会报错中断）
+    list.querySelectorAll('.msg').forEach(n => n.remove());
     for (const m of nonSystem) appendMsgBubble(m);
     scrollBottom();
   }
@@ -323,11 +324,15 @@ ${convo}
     const name = m.role === 'user' ? '' : '<div class="msg-name">我的 AI 助手</div>';
     const imgsHtml = (!streamEl && m.images && m.images.length)
       ? `<div class="msg-images">${m.images.map((src, i) => `<img src="${src}" data-preview="${i}" alt="图片 ${i + 1}">`).join('')}</div>` : '';
+    const voiceRow = m.role === 'assistant'
+      ? `<div class="msg-actions"><button class="voice-btn" data-voice title="朗读这条回复"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1-3.29-2.5-4.03v8.05c1.5-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg><span class="voice-label">朗读</span></button></div>`
+      : '';
     wrap.innerHTML = `
       <div class="msg-avatar">${avatar}</div>
       <div class="msg-body">
         ${name}
         <div class="bubble md">${imgsHtml}${streamEl ? '' : md(m.content) + renderCitations(m.citations)}</div>
+        ${voiceRow}
         ${m.layers && m.layers.length ? `<div class="mem-used"><span class="dot"></span>已调用记忆：${m.layers.join(' · ')}</div>` : ''}
       </div>`;
     list.appendChild(wrap);
@@ -338,6 +343,71 @@ ${convo}
   function scrollBottom() {
     const l = $('#msgList');
     requestAnimationFrame(() => { l.scrollTop = l.scrollHeight; });
+  }
+
+  // ---- 语音朗读（浏览器内置语音合成，无需联网、不额外收费）----
+  const speech = {
+    supported: 'speechSynthesis' in window,
+    activeBtn: null,
+    voices: [],
+  };
+  if (speech.supported) {
+    const loadVoices = () => { speech.voices = window.speechSynthesis.getVoices() || []; };
+    loadVoices();
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+  }
+  function pickChineseVoice() {
+    const vs = speech.voices;
+    return vs.find(v => /^zh[-_]CN/i.test(v.lang))
+        || vs.find(v => /^zh/i.test(v.lang))
+        || vs.find(v => /Chinese/i.test(v.name))
+        || null;
+  }
+  // 从一条消息气泡提取纯文本用于朗读（去掉图片/引用来源/搜索提示等噪音）
+  function speechTextFromBubble(btn) {
+    const msg = btn.closest('.msg');
+    if (!msg) return '';
+    const bubble = msg.querySelector('.bubble');
+    if (!bubble) return '';
+    const clone = bubble.cloneNode(true);
+    clone.querySelectorAll('.msg-images, .cite-label, .cite-item, .searching-hint, .md-table').forEach(n => n.remove());
+    return (clone.textContent || '').replace(/\s{3,}/g, '\n').trim();
+  }
+  function resetSpeechBtn() {
+    if (speech.activeBtn) {
+      speech.activeBtn.classList.remove('speaking');
+      const label = speech.activeBtn.querySelector('.voice-label');
+      if (label) label.textContent = '朗读';
+      speech.activeBtn = null;
+    }
+  }
+  function stopSpeech() {
+    if (speech.supported) window.speechSynthesis.cancel();
+    resetSpeechBtn();
+  }
+  function toggleSpeech(btn) {
+    if (!speech.supported) { toast('当前浏览器不支持语音朗读'); return; }
+    // 再点正在朗读的按钮 → 停止
+    if (speech.activeBtn === btn) { stopSpeech(); return; }
+    stopSpeech();
+    const text = speechTextFromBubble(btn);
+    if (!text) { toast('这条消息还没有可朗读的内容'); return; }
+    let u;
+    try { u = new SpeechSynthesisUtterance(text); }
+    catch (e) { toast('该浏览器无法创建语音，换用系统浏览器试试'); return; }
+    u.lang = 'zh-CN';
+    u.rate = 1; u.pitch = 1; u.volume = 1;
+    const v = pickChineseVoice();
+    if (v) { u.voice = v; u.lang = v.lang; }
+    u.onend = () => resetSpeechBtn();
+    u.onerror = () => resetSpeechBtn();
+    btn.classList.add('speaking');
+    const label = btn.querySelector('.voice-label');
+    if (label) label.textContent = '停止';
+    speech.activeBtn = btn;
+    // 部分移动浏览器需先 resume 再 speak
+    try { window.speechSynthesis.resume(); } catch (e) {}
+    window.speechSynthesis.speak(u);
   }
 
   // 极简 Markdown 渲染
@@ -726,6 +796,7 @@ ${convo}
   // 视图 / 设置
   // ============================================================
   function go(view) {
+    if (view !== 'chat' && speech.supported) stopSpeech();
     state.view = view;
     $$('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + view));
     $$('.tab').forEach(t => t.classList.toggle('active', t.dataset.view === view));
@@ -829,6 +900,8 @@ ${convo}
     });
     // 点击消息里的图片 → 放大预览（事件委托）
     $('#msgList').addEventListener('click', e => {
+      const vb = e.target.closest('[data-voice]');
+      if (vb) { toggleSpeech(vb); return; }
       const im = e.target.closest('img[data-preview]');
       if (!im) return;
       $('#imgPreview').src = im.src;
