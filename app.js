@@ -18,6 +18,7 @@
     baseUrl: 'https://api.deepseek.com',
     model: 'deepseek-flash',
     thinking: false,
+    webSearch: true,
     ctx: 12,
     memory: true,
     autoConsolidate: true,
@@ -326,7 +327,7 @@ ${convo}
       <div class="msg-avatar">${avatar}</div>
       <div class="msg-body">
         ${name}
-        <div class="bubble md">${imgsHtml}${streamEl ? '' : md(m.content)}</div>
+        <div class="bubble md">${imgsHtml}${streamEl ? '' : md(m.content) + renderCitations(m.citations)}</div>
         ${m.layers && m.layers.length ? `<div class="mem-used"><span class="dot"></span>已调用记忆：${m.layers.join(' · ')}</div>` : ''}
       </div>`;
     list.appendChild(wrap);
@@ -389,6 +390,20 @@ ${convo}
     return out.join('\n');
   }
 
+  // 渲染联网搜索的引用来源
+  function renderCitations(cits) {
+    if (!cits || !cits.length) return '';
+    const items = cits.slice(0, 6).map((c, i) => {
+      let host = '';
+      try { host = new URL(c.url).hostname.replace(/^www\./, ''); } catch { host = '来源'; }
+      return `<a href="${c.url}" target="_blank" rel="noopener" class="cite-item"><span class="cite-n">${i + 1}</span><span class="cite-host">${escHtml(host)}</span></a>`;
+    }).join('');
+    return `<div class="citations"><div class="cite-label">🌐 引用来源</div><div class="cite-list">${items}</div></div>`;
+  }
+  function escHtml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
   // 把历史消息转成 API 的 content：纯文字用字符串，带图片用内容块数组
   function toContent(m) {
     if (m.images && m.images.length) {
@@ -432,6 +447,8 @@ ${convo}
     const bubble = appendMsgBubble(aiMsg, true);
     let full = '';
     let buffer = '';
+    let citations = [];
+    let searchingShown = false;
 
     try {
       state.controller = new AbortController();
@@ -445,6 +462,7 @@ ${convo}
           stream: true,
           thinking: { type: S.thinking ? 'enabled' : 'disabled' },
           ...(S.thinking ? { reasoning_effort: 'medium' } : {}),
+          ...(S.webSearch ? { tools: [{ type: 'deepseek_web_search' }] } : {}),
         }),
       });
       if (!res.ok) {
@@ -468,17 +486,36 @@ ${convo}
           if (data === '[DONE]') continue;
           try {
             const obj = JSON.parse(data);
-            const delta = obj.choices?.[0]?.delta?.content || '';
+            const choice = obj.choices?.[0];
+            // 联网搜索事件提示
+            const evt = choice?.server_tool_event;
+            if (evt && evt.type === 'call_started' && !searchingShown) {
+              searchingShown = true;
+              bubble.innerHTML = '<div class="searching-hint"><span class="spin"></span>正在联网搜索最新信息…</div>' + md(full);
+              scrollBottom();
+            }
+            // 引用来源（最后一个 chunk 汇总给出）
+            const anns = choice?.delta?.annotations;
+            if (Array.isArray(anns)) {
+              for (const a of anns) {
+                const c = a.url_citation;
+                if (c && c.url && !citations.some(x => x.url === c.url)) citations.push({ url: c.url, title: c.title || c.url });
+              }
+            }
+            const delta = choice?.delta?.content || '';
             if (delta) {
               full += delta;
-              bubble.innerHTML = md(full);
+              let html = md(full);
+              if (searchingShown && !full) html = '<div class="searching-hint"><span class="spin"></span>正在联网搜索最新信息…</div>' + html;
+              bubble.innerHTML = html;
               scrollBottom();
             }
           } catch { /* 忽略心跳/不完整帧 */ }
         }
       }
       aiMsg.content = full || '（没有收到内容，请重试）';
-      bubble.innerHTML = md(aiMsg.content);
+      if (citations.length) aiMsg.citations = citations;
+      bubble.innerHTML = md(aiMsg.content) + renderCitations(citations);
       state.messages.push(aiMsg);
       await DB.put('messages', aiMsg);
 
@@ -699,6 +736,7 @@ ${convo}
     $('#setApiKey').value = S.apiKey;
     $('#setBaseUrl').value = S.baseUrl;
     $('#setModel').value = S.model;
+    $('#setWebSearch').checked = S.webSearch;
     $('#setThinking').checked = S.thinking;
     $('#setCtx').value = S.ctx;
     $('#ctxVal').textContent = S.ctx;
@@ -710,6 +748,7 @@ ${convo}
     $('#setApiKey').addEventListener('change', e => { S.apiKey = e.target.value.trim(); saveSettings(); });
     $('#setBaseUrl').addEventListener('change', e => { S.baseUrl = e.target.value.trim() || DEFAULT_SETTINGS.baseUrl; saveSettings(); });
     $('#setModel').addEventListener('change', e => { S.model = e.target.value; saveSettings(); });
+    $('#setWebSearch').addEventListener('change', e => { S.webSearch = e.target.checked; saveSettings(); });
     $('#setThinking').addEventListener('change', e => { S.thinking = e.target.checked; saveSettings(); });
     $('#setCtx').addEventListener('input', e => { S.ctx = +e.target.value; $('#ctxVal').textContent = S.ctx; saveSettings(); });
     $('#setMemory').addEventListener('change', e => { S.memory = e.target.checked; saveSettings(); updateMemChip(); });
@@ -746,7 +785,14 @@ ${convo}
   // ============================================================
   // 事件绑定
   // ============================================================
+  function setCompact(on) {
+    $('#app').classList.toggle('compact', !!on);
+    try { localStorage.setItem('examai.compact', on ? '1' : '0'); } catch (e) {}
+  }
+
   function bind() {
+    $('#btnCollapse').addEventListener('click', () => setCompact(true));
+    $('#btnExpand').addEventListener('click', () => setCompact(false));
     $$('.tab').forEach(t => t.addEventListener('click', () => go(t.dataset.view)));
     $('#sendBtn').addEventListener('click', () => { const v = $('#input').value; $('#input').value = ''; send(v); });
     $('#input').addEventListener('keydown', e => {
@@ -869,6 +915,7 @@ ${convo}
   // 启动
   // ============================================================
   async function init() {
+    setCompact(localStorage.getItem('examai.compact') === '1');
     bind();
     fillSettings();
     await ensureProfile();
