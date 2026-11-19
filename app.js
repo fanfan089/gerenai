@@ -324,15 +324,20 @@ ${convo}
     const name = m.role === 'user' ? '' : '<div class="msg-name">我的 AI 助手</div>';
     const imgsHtml = (!streamEl && m.images && m.images.length)
       ? `<div class="msg-images">${m.images.map((src, i) => `<img src="${src}" data-preview="${i}" alt="图片 ${i + 1}">`).join('')}</div>` : '';
-    const voiceRow = m.role === 'assistant'
-      ? `<div class="msg-actions"><button class="voice-btn" data-voice title="朗读这条回复"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1-3.29-2.5-4.03v8.05c1.5-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg><span class="voice-label">朗读</span></button></div>`
+    const voiceBtn = m.role === 'assistant'
+      ? `<button class="voice-btn" data-voice title="朗读这条回复"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1-3.29-2.5-4.03v8.05c1.5-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg><span class="voice-label">朗读</span></button>`
       : '';
+    const delBtn = `<button class="msg-del-btn" data-del="${m.id || ''}" title="删除这条消息" aria-label="删除这条消息"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></button>`;
+    const actionsRow = `<div class="msg-actions">${voiceBtn}${delBtn}</div>`;
+    // 历史消息：有思考内容则渲染可折叠块（默认收起）
+    const reasoningFold = (!streamEl && m.reasoning) ? reasoningFoldHTML(m.reasoning) : '';
     wrap.innerHTML = `
       <div class="msg-avatar">${avatar}</div>
       <div class="msg-body">
         ${name}
+        ${reasoningFold}
         <div class="bubble md">${imgsHtml}${streamEl ? '' : md(m.content) + renderCitations(m.citations)}</div>
-        ${voiceRow}
+        ${actionsRow}
         ${m.layers && m.layers.length ? `<div class="mem-used"><span class="dot"></span>已调用记忆：${m.layers.join(' · ')}</div>` : ''}
       </div>`;
     list.appendChild(wrap);
@@ -343,6 +348,20 @@ ${convo}
   function scrollBottom() {
     const l = $('#msgList');
     requestAnimationFrame(() => { l.scrollTop = l.scrollHeight; });
+  }
+
+  // 删除单条消息：本地存储 + 内存 + 界面同步移除
+  async function deleteMessage(id) {
+    if (!id) return;
+    if (state.streaming) { toast('生成中不能删除，请稍候'); return; }
+    if (!confirm('删除这条消息？（长期记忆档案不受影响）')) return;
+    // 若正在朗读则先停止
+    if (speech.supported && speech.activeBtn) stopSpeech();
+    state.messages = state.messages.filter(m => m.id !== id);
+    try { await DB.del('messages', id); } catch (e) {}
+    renderMessages();
+    updateTokenHint();
+    toast('已删除');
   }
 
   // ---- 语音朗读（浏览器内置语音合成，无需联网、不额外收费）----
@@ -474,6 +493,18 @@ ${convo}
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
+  // 思考过程折叠块（默认收起，点标题展开/收起）
+  function reasoningFoldHTML(text) {
+    if (!text || !text.trim()) return '';
+    return `<div class="reasoning-fold">
+      <button class="reasoning-fold-head" data-reasoning-fold>
+        <span class="rf-ico">💭</span><span class="rf-label">查看思考过程</span>
+        <svg class="rf-arrow" viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z"/></svg>
+      </button>
+      <div class="reasoning-fold-body" hidden>${escHtml(text)}</div>
+    </div>`;
+  }
+
   // 把历史消息转成 API 的 content：纯文字用字符串，带图片用内容块数组
   function toContent(m) {
     if (m.images && m.images.length) {
@@ -525,6 +556,9 @@ ${convo}
     let buffer = '';
     let citations = [];
     let searchingShown = false;
+    let reasoningShown = false;
+    const gen = createGenIndicator(bubble);
+    if (!opt.isRetry) gen.setStage('正在连接…');
 
     try {
       state.controller = new AbortController();
@@ -548,6 +582,7 @@ ${convo}
       const reader = res.body.getReader();
       const decoder = new TextDecoder('utf-8');
       $('#typing').hidden = true;
+      gen.setStage(S.thinking ? '正在深度思考…' : '正在生成回答…');
 
       while (true) {
         const { done, value } = await reader.read();
@@ -567,6 +602,7 @@ ${convo}
             const evt = choice?.server_tool_event;
             if (evt && evt.type === 'call_started' && !searchingShown) {
               searchingShown = true;
+              gen.setStage('正在联网搜索…');
               bubble.innerHTML = '<div class="searching-hint"><span class="spin"></span>正在联网搜索最新信息…</div>' + md(full);
               scrollBottom();
             }
@@ -578,9 +614,17 @@ ${convo}
                 if (c && c.url && !citations.some(x => x.url === c.url)) citations.push({ url: c.url, title: c.title || c.url });
               }
             }
+            // 深度思考过程（reasoning_content）
+            const reasoning = choice?.delta?.reasoning_content || '';
+            if (reasoning) {
+              reasoningShown = true;
+              gen.setStage('正在深度思考…');
+              gen.addReasoning(reasoning);
+            }
             const delta = choice?.delta?.content || '';
             if (delta) {
               full += delta;
+              gen.setStage('正在生成回答…');
               let html = md(full);
               if (searchingShown && !full) html = '<div class="searching-hint"><span class="spin"></span>正在联网搜索最新信息…</div>' + html;
               bubble.innerHTML = html;
@@ -589,8 +633,10 @@ ${convo}
           } catch { /* 忽略心跳/不完整帧 */ }
         }
       }
+      gen.done();
       aiMsg.content = full || '（没有收到内容，请重试）';
       if (citations.length) aiMsg.citations = citations;
+      if (gen.getReasoning().trim()) aiMsg.reasoning = gen.getReasoning();
       bubble.innerHTML = md(aiMsg.content) + renderCitations(citations);
       // 成功后移除可能残留的重试按钮
       if (bubble.parentElement) {
@@ -611,11 +657,14 @@ ${convo}
     } catch (e) {
       $('#typing').hidden = true;
       if (e.name === 'AbortError') {
+        gen.stop();
         bubble.innerHTML = md(full || '（已停止）') + (full ? '\n\n_（已停止生成）_' : '');
         aiMsg.content = full || '（已停止）';
+        if (gen.getReasoning().trim()) aiMsg.reasoning = gen.getReasoning();
         if (!state.messages.some(m => m.id === aiMsg.id)) state.messages.push(aiMsg);
         await DB.put('messages', aiMsg);
       } else {
+        gen.fail();
         bubble.innerHTML = md(full) + `\n\n⚠️ 出错了：${e.message}`;
         // 出错：追加"重新生成"按钮，点击后复用同一上下文重发
         const body = bubble.parentElement;
@@ -644,6 +693,79 @@ ${convo}
     state.streaming = on;
     $('#sendBtn').disabled = on;
     $('#stopRow').hidden = !on;
+  }
+
+  // ---- 生成状态指示器：阶段文字 + 实时计时 + 深度思考过程 ----
+  function fmtElapsed(ms) {
+    const s = Math.max(0, Math.floor(ms / 1000));
+    if (s < 60) return s + ' 秒';
+    const m = Math.floor(s / 60), r = s % 60;
+    return m + ' 分 ' + (r < 10 ? '0' : '') + r + ' 秒';
+  }
+  // 在气泡所在消息体内创建/取得状态条与思考过程区，并返回控制器
+  function createGenIndicator(bubble) {
+    const body = bubble ? bubble.parentElement : null;
+    if (!body) return { setStage(){}, addReasoning(){}, done(){}, fail(){}, stop(){}, remove(){} };
+    // 先清理旧的（重试场景），避免状态条堆叠
+    body.querySelectorAll(':scope > .gen-status, :scope > .gen-reasoning').forEach(n => n.remove());
+    // 状态条插到气泡之前
+    const status = document.createElement('div');
+    status.className = 'gen-status';
+    status.innerHTML = '<span class="gen-dots"><i></i><i></i><i></i></span><span class="gen-stage">正在连接…</span><span class="gen-time">0 秒</span>';
+    body.insertBefore(status, bubble);
+    const stageEl = status.querySelector('.gen-stage');
+    const timeEl = status.querySelector('.gen-time');
+    const t0 = Date.now();
+    let timer = setInterval(() => { timeEl.textContent = fmtElapsed(Date.now() - t0); }, 250);
+    let reasonEl = null;
+    let reasonText = '';
+    const ctrl = {
+      setStage(txt) { if (stageEl) stageEl.textContent = txt; },
+      addReasoning(txt) {
+        reasonText += txt;
+        if (!reasonEl) {
+          reasonEl = document.createElement('div');
+          reasonEl.className = 'gen-reasoning';
+          body.insertBefore(reasonEl, bubble);
+        }
+        reasonEl.textContent = reasonText;
+        reasonEl.scrollTop = reasonEl.scrollHeight;
+      },
+      getReasoning() { return reasonText; },
+      // 生成结束后：把实时思考区替换成可折叠块（默认收起），供事后随时查看
+      foldReasoning() {
+        if (!reasonText.trim()) return;
+        if (reasonEl && reasonEl.parentNode) reasonEl.remove();
+        const tmp = document.createElement('div');
+        tmp.innerHTML = reasoningFoldHTML(reasonText);
+        const fold = tmp.firstElementChild;
+        if (fold) body.insertBefore(fold, bubble);
+      },
+      done() {
+        clearInterval(timer);
+        status.classList.add('done');
+        status.querySelector('.gen-dots').remove();
+        stageEl.textContent = '回答完成';
+        timeEl.textContent = '用时 ' + fmtElapsed(Date.now() - t0);
+        ctrl.foldReasoning();
+      },
+      fail() {
+        clearInterval(timer);
+        status.classList.add('error');
+        const d = status.querySelector('.gen-dots'); if (d) d.remove();
+        stageEl.textContent = '生成失败';
+        timeEl.textContent = '用时 ' + fmtElapsed(Date.now() - t0);
+      },
+      stop() {
+        clearInterval(timer);
+        const d = status.querySelector('.gen-dots'); if (d) d.remove();
+        stageEl.textContent = '已停止';
+        timeEl.textContent = '用时 ' + fmtElapsed(Date.now() - t0);
+        ctrl.foldReasoning();
+      },
+      remove() { clearInterval(timer); if (status.parentNode) status.remove(); if (reasonEl && reasonEl.parentNode) reasonEl.remove(); },
+    };
+    return ctrl;
   }
 
   function updateTokenHint() {
@@ -930,6 +1052,21 @@ ${convo}
     $('#msgList').addEventListener('click', e => {
       const vb = e.target.closest('[data-voice]');
       if (vb) { toggleSpeech(vb); return; }
+      const delBtn = e.target.closest('[data-del]');
+      if (delBtn) { deleteMessage(delBtn.dataset.del); return; }
+      const foldHead = e.target.closest('[data-reasoning-fold]');
+      if (foldHead) {
+        const fold = foldHead.closest('.reasoning-fold');
+        if (fold) {
+          const opening = !fold.classList.contains('open');
+          fold.classList.toggle('open', opening);
+          const body = fold.querySelector('.reasoning-fold-body');
+          if (body) body.hidden = !opening;
+          const label = fold.querySelector('.rf-label');
+          if (label) label.textContent = opening ? '收起思考过程' : '查看思考过程';
+        }
+        return;
+      }
       const im = e.target.closest('img[data-preview]');
       if (!im) return;
       $('#imgPreview').src = im.src;
