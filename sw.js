@@ -1,5 +1,5 @@
 /* Service Worker — 离线缓存壳，让 PWA 可添加到主屏幕并秒开 */
-const CACHE = 'exam-ai-shell-v15';
+const CACHE = 'exam-ai-shell-v16';
 const ASSETS = ['./', './index.html', './style.css', './db.js', './app.js', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {

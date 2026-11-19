@@ -1014,6 +1014,17 @@ ${convo}
   function bind() {
     $('#btnCollapse').addEventListener('click', () => setCompact(true));
     $('#btnExpand').addEventListener('click', () => setCompact(false));
+    // 更多操作菜单：开关 + 点外部关闭
+    const moreMenu = $('#moreMenu');
+    $('#btnMore').addEventListener('click', e => {
+      e.stopPropagation();
+      moreMenu.hidden = !moreMenu.hidden;
+    });
+    document.addEventListener('click', e => {
+      if (!moreMenu.hidden && !e.target.closest('.more-wrap')) moreMenu.hidden = true;
+    });
+    // 菜单项点击后收起（具体操作由各自的监听器处理）
+    $$('#moreMenu .more-item').forEach(it => it.addEventListener('click', () => { moreMenu.hidden = true; }));
     $$('.tab').forEach(t => t.addEventListener('click', () => go(t.dataset.view)));
     $('#sendBtn').addEventListener('click', () => { const v = $('#input').value; $('#input').value = ''; send(v); });
     $('#input').addEventListener('keydown', e => {
