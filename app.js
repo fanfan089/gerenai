@@ -511,10 +511,16 @@ ${convo}
     for (const m of history) payloadMsgs.push({ role: m.role, content: toContent(m) });
     payloadMsgs.push({ role: 'user', content: toContent(userMsg) });
 
-    setStreaming(true);
-    $('#typing').hidden = false;
     const aiMsg = { id: uid(), examId: activeKey(), role: 'assistant', content: '', layers: sys.layers, ts: now() };
     const bubble = appendMsgBubble(aiMsg, true);
+    await runGeneration(payloadMsgs, sys, aiMsg, bubble, { isRetry: false });
+  }
+
+  // 真正执行流式请求；发送与"重新生成"共用。sys 为空时重试会重建上下文。
+  async function runGeneration(payloadMsgs, sys, aiMsg, bubble, opt) {
+    opt = opt || {};
+    setStreaming(true);
+    $('#typing').hidden = false;
     let full = '';
     let buffer = '';
     let citations = [];
@@ -586,7 +592,13 @@ ${convo}
       aiMsg.content = full || '（没有收到内容，请重试）';
       if (citations.length) aiMsg.citations = citations;
       bubble.innerHTML = md(aiMsg.content) + renderCitations(citations);
-      state.messages.push(aiMsg);
+      // 成功后移除可能残留的重试按钮
+      if (bubble.parentElement) {
+        const oldBox = bubble.parentElement.querySelector('.retry-box');
+        if (oldBox) oldBox.remove();
+      }
+      // 成功时确保不重复入栈（重试场景 aiMsg 尚未入栈）
+      if (!state.messages.some(m => m.id === aiMsg.id)) state.messages.push(aiMsg);
       await DB.put('messages', aiMsg);
 
       // 自动整理记忆（异步，不阻塞）
@@ -601,10 +613,26 @@ ${convo}
       if (e.name === 'AbortError') {
         bubble.innerHTML = md(full || '（已停止）') + (full ? '\n\n_（已停止生成）_' : '');
         aiMsg.content = full || '（已停止）';
-        state.messages.push(aiMsg);
+        if (!state.messages.some(m => m.id === aiMsg.id)) state.messages.push(aiMsg);
         await DB.put('messages', aiMsg);
       } else {
         bubble.innerHTML = md(full) + `\n\n⚠️ 出错了：${e.message}`;
+        // 出错：追加"重新生成"按钮，点击后复用同一上下文重发
+        const body = bubble.parentElement;
+        if (body) {
+          const old = body.querySelector('.retry-box');
+          if (old) old.remove();
+          const box = document.createElement('div');
+          box.className = 'retry-box';
+          box.innerHTML = '<button class="retry-btn" data-retry>🔄 重新生成</button>';
+          body.appendChild(box);
+          box.querySelector('[data-retry]').addEventListener('click', async (ev) => {
+            const rb = ev.currentTarget;
+            rb.disabled = true; rb.textContent = '🔄 正在重试…';
+            bubble.innerHTML = '';
+            await runGeneration(payloadMsgs, sys, aiMsg, bubble, { isRetry: true });
+          });
+        }
         toast('请求失败：' + e.message, 3500);
       }
     } finally {

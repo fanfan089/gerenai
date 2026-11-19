@@ -45,6 +45,8 @@ html,body{margin:0;padding:0;height:100%;background:var(--bg-2);color:var(--text
 a{color:var(--brand);text-decoration:none}
 button,input,textarea,select{font-family:inherit;font-size:inherit}
 ::selection{background:rgba(13,148,136,.22)}
+/* 确保 hidden 属性始终生效（否则 .typing/.attach-preview 的 display 会压过它） */
+[hidden]{display:none !important}
 
 #app{display:flex;flex-direction:column;height:100%;max-width:720px;margin:0 auto;background:var(--bg);
   box-shadow:0 0 60px rgba(6,50,42,.08);position:relative;overflow:hidden}
@@ -177,6 +179,13 @@ main{flex:1;min-height:0;position:relative}
 .voice-btn.speaking{background:var(--brand-soft);color:var(--brand);border-color:var(--brand)}
 .voice-btn.speaking svg{animation:voicePulse 1s ease-in-out infinite}
 @keyframes voicePulse{50%{opacity:.35}}
+/* 出错重试按钮 */
+.retry-box{display:flex;margin-top:7px;padding:0 2px}
+.retry-btn{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--brand);background:var(--brand-soft);
+  color:var(--brand);font-size:11px;font-weight:650;padding:5px 12px;border-radius:14px;cursor:pointer;
+  transition:all .18s cubic-bezier(.2,.8,.2,1);box-shadow:var(--shadow-sm)}
+.retry-btn:active{transform:scale(.95)}
+.retry-btn:disabled{opacity:.55;cursor:default}
 
 /* 正在输入 */
 .typing{display:flex;gap:5px;padding:2px 0 12px 48px;flex-shrink:0}
