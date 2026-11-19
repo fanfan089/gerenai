@@ -1171,7 +1171,17 @@ ${convo}
     await loadExams();
     await setChatMode(state.chatMode, false); // 应用模式 UI（不重复加载）
     await loadMessages();
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+    if ('serviceWorker' in navigator) {
+      // 新版本 Service Worker 接管后，自动刷新一次页面，让界面立刻更新到最新
+      let reloaded = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (reloaded) return;
+        reloaded = true;
+        // 避免打断正在输出的回复：生成中不自动刷新，交给用户下次打开生效
+        if (!state.streaming) location.reload();
+      });
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    }
   }
 
   document.addEventListener('DOMContentLoaded', init);
