@@ -505,13 +505,25 @@ ${convo}
     </div>`;
   }
 
-  // 把历史消息转成 API 的 content：纯文字用字符串，带图片用内容块数组
-  function toContent(m) {
-    if (m.images && m.images.length) {
+  // 当前模型是否支持看图：flash 系列原生多模态；v4-pro 为纯文本
+  function modelSupportsVision() {
+    const m = String(S.model || '').toLowerCase();
+    return m.includes('flash') || m.includes('vision');
+  }
+
+  // 把历史消息转成 API 的 content：纯文字用字符串，带图片用内容块数组。
+  // 若当前模型不支持图片，则把图片降级成文字占位，避免历史图片触发 400 错误。
+  function toContent(m, includeImages) {
+    const hasImg = m.images && m.images.length;
+    if (hasImg && includeImages !== false) {
       const parts = [];
       if (m.content) parts.push({ type: 'text', text: m.content });
       for (const src of m.images) parts.push({ type: 'image_url', image_url: { url: src, detail: 'low' } });
       return parts;
+    }
+    if (hasImg) {
+      const note = '（用户发送了一张图片）';
+      return m.content ? (m.content + '\n' + note) : note;
     }
     return m.content || '';
   }
@@ -536,11 +548,15 @@ ${convo}
     appendMsgBubble(userMsg);
 
     // 组装发给 API 的消息（系统提示 + 最近 N 条 + 当前输入）
+    const canImage = modelSupportsVision();
+    if (images.length && !canImage) {
+      toast('当前模型不支持看图，图片已按文字说明发送。要看图请在设置里换 deepseek-flash', 4000);
+    }
     const ctxCount = S.ctx;
     const history = state.messages.filter(m => m.role !== 'system' && m.id !== userMsg.id).slice(-ctxCount);
     const payloadMsgs = [{ role: 'system', content: sys.text }];
-    for (const m of history) payloadMsgs.push({ role: m.role, content: toContent(m) });
-    payloadMsgs.push({ role: 'user', content: toContent(userMsg) });
+    for (const m of history) payloadMsgs.push({ role: m.role, content: toContent(m, canImage) });
+    payloadMsgs.push({ role: 'user', content: toContent(userMsg, canImage) });
 
     const aiMsg = { id: uid(), examId: activeKey(), role: 'assistant', content: '', layers: sys.layers, ts: now() };
     const bubble = appendMsgBubble(aiMsg, true);

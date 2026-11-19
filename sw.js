@@ -1,5 +1,5 @@
 /* Service Worker — 离线缓存壳（网络优先，保证更新即时生效）*/
-const CACHE = 'exam-ai-shell-v17';
+const CACHE = 'exam-ai-shell-v18';
 const ASSETS = ['./', './index.html', './style.css', './db.js', './app.js', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
