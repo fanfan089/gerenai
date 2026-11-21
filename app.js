@@ -1447,9 +1447,8 @@ ${convo}
     return { fileUrl: url + '/' + encodeURIComponent(file), token };
   }
   function davBusy(on) {
-    const up = $('#btnDavUpload'), down = $('#btnDavDownload');
-    if (up) up.disabled = on;
-    if (down) down.disabled = on;
+    const ids = ['#btnDavUpload', '#btnDavDownload', '#btnSync'];
+    ids.forEach(id => { const el = $(id); if (el) el.disabled = on; });
   }
   async function davUpload() {
     let started = false;
@@ -1501,6 +1500,56 @@ ${convo}
     } catch (e) {
       davStatus('❌ 下载失败：' + e.message, 'err');
       toast('下载失败：' + e.message, 3500);
+      if (started) davBusy(false);
+    }
+  }
+
+  // 一键同步：读取云端 → 与本机合并（不覆盖）→ 写回本机 → 回传云端 → 刷新
+  async function davSync() {
+    let started = false;
+    try {
+      const { fileUrl, token } = davConfig();
+      davBusy(true); started = true;
+      davStatus('① 正在读取云端备份…');
+      toast('① 正在读取云端备份…', 6000);
+      const res = await fetch(fileUrl, { method: 'GET', headers: { 'Authorization': 'Basic ' + token } });
+      let cloud = null;
+      if (res.status === 200) {
+        cloud = await res.json();
+      } else if (res.status !== 404) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      davStatus('② 正在合并本机与云端数据…');
+      toast('② 正在合并本机与云端数据…', 6000);
+      let stats = null;
+      if (cloud) {
+        stats = await DB.mergeAll(cloud);
+      } else {
+        // 云端暂无备份：视为首次同步，直接把本机数据作为合并结果
+        stats = { messages: (await DB.countMessages()) };
+      }
+      davStatus('③ 正在回传合并结果…');
+      toast('③ 正在回传合并结果…', 6000);
+      const data = await DB.exportAll();
+      data.syncedAt = Date.now();
+      const size = (JSON.stringify(data).length / 1024).toFixed(1);
+      const put = await fetch(fileUrl, {
+        method: 'PUT',
+        headers: { 'Authorization': 'Basic ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!put.ok) {
+        const t = await put.text().catch(() => '');
+        throw new Error(`HTTP ${put.status} ${t.slice(0, 100)}`);
+      }
+      const n = stats.messages != null ? stats.messages : data.messages.length;
+      const msg = `✅ 已同步 · 共 ${n} 条对话 · ${size}KB · ${new Date().toLocaleTimeString('zh-CN')}`;
+      davStatus(msg, 'ok');
+      toast(msg, 3500);
+      setTimeout(() => location.reload(), 1000);
+    } catch (e) {
+      davStatus('❌ 同步失败：' + e.message, 'err');
+      toast('同步失败：' + e.message, 4000);
       if (started) davBusy(false);
     }
   }
@@ -1680,6 +1729,7 @@ ${convo}
     // OpenList WebDAV 云同步
     $('#btnDavUpload').addEventListener('click', davUpload);
     $('#btnDavDownload').addEventListener('click', davDownload);
+    $('#btnSync').addEventListener('click', davSync);
 
     $('#btnTest').addEventListener('click', testConnection);
     bindSettings();
