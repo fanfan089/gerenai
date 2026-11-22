@@ -421,8 +421,11 @@ html[data-layout="full"] .msg.me .msg-body{max-width:88%}
 .profile-view,.digest-view{font-size:13px;line-height:1.75;color:var(--text-2)}
 .profile-section{margin-bottom:12px}
 .profile-section b{display:block;color:var(--text);font-size:12px;margin-bottom:6px;font-weight:700}
-.fact-item{padding:7px 0;border-bottom:1px dashed var(--line)}
+.fact-item{padding:7px 0;border-bottom:1px dashed var(--line);display:flex;align-items:flex-start;gap:4px}
 .fact-item:last-child{border:none}
+.fact-del{flex-shrink:0;margin-left:auto;border:none;background:transparent;color:var(--text-3);font-size:12px;
+  cursor:pointer;width:20px;height:20px;border-radius:6px;line-height:1;padding:0}
+.fact-del:active{background:var(--surface-2);color:var(--danger,#e5484d)}
 .digest-item{background:var(--surface-2);border-radius:12px;padding:12px;margin-bottom:9px;font-size:12.5px;
   border:1px solid var(--line)}
 .digest-meta{font-size:10px;color:var(--text-3);margin-bottom:6px;font-weight:600}

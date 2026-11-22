@@ -39,7 +39,7 @@
   // ---------- 运行时状态 ----------
   const state = {
     view: 'chat',
-    chatMode: localStorage.getItem('examai.chatMode') || 'chat', // 'chat' 自由聊天 | 'exam' 考试规划
+    chatMode: 'exam', // 仅保留考试规划模式（自由聊天已移除）
     exams: [],
     examId: localStorage.getItem('examai.currentExam') || null,
     messages: [],
@@ -694,8 +694,11 @@ ${convo}
     renderPendingImages();
     if ((!text && !images.length) || state.streaming) return;
     if (!S.apiKey) { toast('请先到「设置」里填写 DeepSeek API Key'); go('settings'); return; }
+    if (!state.examId || !state.exams.find(e => e.id === state.examId)) {
+      toast('请先到「考试」页添加并选择一场考试'); go('exams'); return;
+    }
 
-    const exam = state.chatMode === 'exam' ? (state.exams.find(e => e.id === state.examId) || null) : null;
+    const exam = state.exams.find(e => e.id === state.examId) || null;
     const sys = await buildSystem(exam, text || '（用户发送了一张图片）');
     state.lastContext = sys;
 
@@ -1052,18 +1055,7 @@ ${convo}
   }
 
   function renderBanner() {
-    const b = $('#examBanner');
-    // 横幅只在考试模式且有选中考试时显示
-    if (state.chatMode !== 'exam') { b.hidden = true; return; }
-    const e = state.exams.find(x => x.id === state.examId);
-    if (!e) { b.hidden = true; return; }
-    b.hidden = false;
-    $('#bannerName').textContent = e.name;
-    const dl = daysLeft(e.date);
-    $('#bannerDays').textContent = dl !== null ? (dl >= 0 ? `距考试 ${dl} 天` : `已过 ${-dl} 天`) : '';
-    const subs = e.subjects || [];
-    const pct = subs.length ? Math.round(subs.filter(s => s.done).length / subs.length * 100) : 0;
-    $('#bannerFill').style.width = pct + '%';
+    // 顶部专题/考试横幅已移除：当前名称在标题栏显示，切换请到「考试/专题」页
   }
 
   async function selectExam(id) {
@@ -1123,7 +1115,7 @@ ${convo}
     $('#profileView').innerHTML = `
       ${p.summary ? `<div class="profile-section"><b>总体情况</b>${escHtml(p.summary)}</div>` : '<div class="profile-section">（暂无，聊天几次后 AI 会自动归纳）</div>'}
       ${p.goals.length ? `<div class="profile-section"><b>目标</b>${p.goals.map(g => `<div class="fact-item">• ${escHtml(g)}</div>`).join('')}</div>` : ''}
-      ${p.facts.length ? `<div class="profile-section"><b>已记住的事实</b>${p.facts.map(f => `<div class="fact-item">• ${escHtml(f.text)} <span style="opacity:.5">${new Date(f.ts).toLocaleDateString('zh-CN')}</span></div>`).join('')}</div>` : ''}
+      ${p.facts.length ? `<div class="profile-section"><b>已记住的事实</b>${p.facts.map((f, i) => `<div class="fact-item">• ${escHtml(f.text)} <span style="opacity:.5">${new Date(f.ts).toLocaleDateString('zh-CN')}</span><button class="fact-del" data-fact-del="${i}" title="删除这条事实" aria-label="删除这条事实">✕</button></div>`).join('')}</div>` : ''}
       <div class="hint">上次更新：${new Date(p.updatedAt).toLocaleString('zh-CN')}</div>`;
 
     $('#digestView').innerHTML = digests.length
@@ -1131,45 +1123,28 @@ ${convo}
       : '<div>（暂无滚动摘要，对话满 30 条会自动压缩，也可点上方「立即整理」）</div>';
   }
 
-  // 设置对话模式（自由聊天 / 考试规划）
+  // 模式初始化：仅考试规划（自由聊天已移除）
   async function setChatMode(mode, doReload = true) {
-    state.chatMode = mode;
-    localStorage.setItem('examai.chatMode', mode);
-    // 更新切换按钮高亮
-    $$('#modeSwitch .mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
-    // 更新空状态文案与快捷问题
-    const isExam = mode === 'exam';
-    $('#emptyIcon').textContent = isExam ? '🎯' : '💬';
-    $('#emptyTitle').textContent = isExam ? '考试规划模式' : '你的 AI 聊天伙伴';
-    $('#emptyDesc').textContent = isExam
-      ? '选中一场考试后，我会围绕它帮你排计划、盯进度。所有对话都会记住，随时切回「自由聊天」也能无缝衔接。'
-      : '什么都能聊——学习、工作、生活、答疑、写东西。你说过的每件事我都会长期记住，聊得越久越懂你。想专门规划考试时，点上方「考试规划」切换。';
-    const quick = isExam
-      ? [
-          ['📅 制定本周计划', '帮我根据目前的考试制定一份本周复习计划'],
-          ['📊 总结复习进度', '总结一下我现在的复习进度和薄弱环节'],
-          ['💪 调整状态', '我最近状态有点焦虑，帮我调整一下计划'],
-        ]
-      : [
-          ['✨ 你能帮我做什么', '你能帮我做什么？'],
-          ['🧩 帮我理清一件事', '帮我梳理一下最近让我纠结的事情'],
-          ['📖 讲点有意思的', '给我讲讲一个有意思的知识点'],
-        ];
+    state.chatMode = 'exam';
+    $('#emptyIcon').textContent = '🎯';
+    $('#emptyTitle').textContent = '考试规划模式';
+    $('#emptyDesc').textContent = '选中一场考试后，我会围绕它帮你排计划、盯进度。所有对话都会记住。';
+    const quick = [
+      ['📅 制定本周计划', '帮我根据目前的考试制定一份本周复习计划'],
+      ['📊 总结复习进度', '总结一下我现在的复习进度和薄弱环节'],
+      ['💪 调整状态', '我最近状态有点焦虑，帮我调整一下计划'],
+    ];
     $('#quickStarts').innerHTML = quick.map(q => `<button class="quick-btn" data-q="${q[1]}">${q[0]}</button>`).join('');
     $$('#quickStarts .quick-btn').forEach(b => b.addEventListener('click', () => send(b.dataset.q)));
-    $('#input').placeholder = isExam ? '输入消息，例如：帮我排一下今天的复习任务…' : '输入消息，什么都能聊…';
+    $('#input').placeholder = '输入消息，例如：帮我排一下今天的复习任务…';
     updateCtxLabel();
     renderBanner();
     if (doReload) await loadMessages();
   }
 
   function updateCtxLabel() {
-    if (state.chatMode === 'exam') {
-      const e = state.exams.find(x => x.id === state.examId);
-      $('#ctxLabel').textContent = e ? e.name : '考试规划 · 未选考试';
-    } else {
-      $('#ctxLabel').textContent = '自由聊天';
-    }
+    const e = state.exams.find(x => x.id === state.examId);
+    $('#ctxLabel').textContent = e ? e.name : '考试规划 · 未选考试';
   }
 
   // ============================================================
@@ -1284,13 +1259,11 @@ ${convo}
       $('#searchModal').hidden = true;
       // 切到对应会话
       if (examId === GLOBAL) {
-        if (state.chatMode !== 'chat') await setChatMode('chat', false);
-        state.examId = null;
-        localStorage.removeItem('examai.currentExam');
+        toast('这是已删除的自由聊天记录，无法跳转');
+        return;
       } else {
         state.examId = examId;
         localStorage.setItem('examai.currentExam', examId);
-        if (state.chatMode !== 'exam') await setChatMode('exam', false);
       }
       await loadMessages();
       renderExams(); renderBanner(); updateCtxLabel();
@@ -1333,6 +1306,16 @@ ${convo}
     p.rules.splice(idx, 1);
     await DB.put('profile', p);
     renderMemory();
+  }
+
+  // 删除核心档案里的一条事实（用户手动管理，删后不再注入）
+  async function removeFact(idx) {
+    const p = await ensureProfile();
+    if (!Array.isArray(p.facts) || idx < 0 || idx >= p.facts.length) return;
+    p.facts.splice(idx, 1);
+    await DB.put('profile', p);
+    renderMemory();
+    toast('已删除这条记忆');
   }
 
   // 检测用户消息里是否包含"明确的长期规则指令"，自动存为固定规则。
@@ -1677,9 +1660,6 @@ ${convo}
       $('#memModal').hidden = false;
     });
 
-    // 模式切换：自由聊天 / 考试规划（快捷按钮由 setChatMode 渲染并绑定）
-    $$('#modeSwitch .mode-btn').forEach(btn => btn.addEventListener('click', () => setChatMode(btn.dataset.mode)));
-
     $('#btnAddExam').addEventListener('click', () => openExamModal(null));
     $('#btnSaveExam').addEventListener('click', async () => {
       const name = $('#exName').value.trim();
@@ -1731,6 +1711,12 @@ ${convo}
       const del = e.target.closest('[data-rule-del]');
       if (del) removeRule(+del.dataset.ruleDel);
     });
+    // 核心档案：手动删除某条已记住的事实
+    const profileView = $('#profileView');
+    if (profileView) profileView.addEventListener('click', e => {
+      const del = e.target.closest('[data-fact-del]');
+      if (del) removeFact(+del.dataset.factDel);
+    });
     $('#btnExport').addEventListener('click', async () => {
       const data = await DB.exportAll();
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -1766,11 +1752,24 @@ ${convo}
   // ============================================================
   // 启动
   // ============================================================
+  // 一次性清理：删除原"自由聊天"(GLOBAL 分区)的历史消息与摘要，只保留考试规划
+  async function purgeLegacyChat() {
+    if (localStorage.getItem('examai.purgedFreeChat') === '1') return;
+    try {
+      const msgs = await DB.all('messages');
+      for (const m of msgs) if ((m.examId || GLOBAL) === GLOBAL) await DB.del('messages', m.id);
+      const dgs = await DB.all('digests');
+      for (const d of dgs) if ((d.examId || GLOBAL) === GLOBAL) await DB.del('digests', d.id);
+      localStorage.setItem('examai.purgedFreeChat', '1');
+    } catch (e) { console.warn('清理旧聊天记录失败', e); }
+  }
+
   async function init() {
     setCompact(localStorage.getItem('examai.compact') === '1');
     bind();
     fillSettings();
     await ensureProfile();
+    await purgeLegacyChat();
     await loadExams();
     await setChatMode(state.chatMode, false); // 应用模式 UI（不重复加载）
     await loadMessages();

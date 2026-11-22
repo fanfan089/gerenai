@@ -29,7 +29,7 @@
       <div class="logo-dot"></div>
       <div class="topbar-title">
         <span class="app-name">我的 AI 助手</span>
-        <span class="app-sub" id="ctxLabel">自由聊天</span>
+        <span class="app-sub" id="ctxLabel">考试规划</span>
       </div>
     </div>
     <div class="topbar-right">
@@ -56,18 +56,6 @@
 
     <!-- ===== 对话页 ===== -->
     <section class="view active" id="view-chat">
-      <div class="mode-switch" id="modeSwitch">
-        <button class="mode-btn active" data-mode="chat">💬 自由聊天</button>
-        <button class="mode-btn" data-mode="exam">🎯 考试规划</button>
-      </div>
-      <div class="exam-banner" id="examBanner" hidden>
-        <div class="exam-banner-info">
-          <span class="exam-banner-name" id="bannerName"></span>
-          <span class="exam-banner-days" id="bannerDays"></span>
-        </div>
-        <div class="exam-banner-bar"><div class="exam-banner-fill" id="bannerFill"></div></div>
-      </div>
-
       <div class="msg-list" id="msgList">
         <div class="empty-chat" id="emptyChat">
           <div class="empty-icon" id="emptyIcon">💬</div>
@@ -299,7 +287,7 @@
       <input type="search" id="searchInput" placeholder="输入关键词，搜所有对话…" autocomplete="off">
       <button class="search-clear" id="searchClear" hidden>✕</button>
     </div>
-    <div class="search-hint" id="searchHint">搜你在自由聊天和所有考试里说过的每句话 · 点结果可跳转</div>
+    <div class="search-hint" id="searchHint">搜你在所有考试里说过的每句话 · 点结果可跳转</div>
     <div class="search-results" id="searchResults"></div>
   </div>
 </div>
