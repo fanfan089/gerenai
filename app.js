@@ -1118,7 +1118,7 @@ ${convo}
           const t = typeof r === 'string' ? r : r.text;
           return '<div class="rule-item"><span class="rule-num">' + (i + 1) + '</span><span class="rule-text">' + escHtml(t) + '</span><button class="rule-del" data-rule-del="' + i + '" title="删除">✕</button></div>';
         }).join('')
-      : '<div class="rules-empty">还没有固定规则。直接在对话里说「记住：…」就会自动存进来，或在下面手动添加。</div>';
+      : '<div class="rules-empty">还没有固定规则。想让 AI 长期记住，在对话里用「记住：…」「固定规则：…」「以后都…」这类明确说法即可（闲聊不会误记），也可在下面手动添加。</div>';
 
     $('#profileView').innerHTML = `
       ${p.summary ? `<div class="profile-section"><b>总体情况</b>${escHtml(p.summary)}</div>` : '<div class="profile-section">（暂无，聊天几次后 AI 会自动归纳）</div>'}
@@ -1335,19 +1335,33 @@ ${convo}
     renderMemory();
   }
 
-  // 检测用户消息里是否包含"要求长期记住"的指令，自动存为固定规则
+  // 检测用户消息里是否包含"明确的长期规则指令"，自动存为固定规则。
+  // 原则：宁可漏判，不可误判——闲聊里偶然出现"必须/应该/一定"绝不能记成规则。
   async function detectRuleFromMessage(text) {
     if (!text) return;
-    const patterns = [
-      /(记住|记好|别忘了|以后都|每次都|每次回答|一直都要|始终|今后).{2,}/,
-      /(不许|不准|不要再|别再|禁止|必须|一定要|务必).{2,}/,
-      /(规则是|规矩是|要求是|我要求|我的要求是|按我的规则|改成).{2,}/,
-      /(更正|纠正|说错了|我说错|应该是|正确的是).{2,}/,
-    ];
-    if (!patterns.some(re => re.test(text))) return;
-    // 去掉引导词，取句子本身
-    let rule = text.replace(/^(请?记住|记好|请你记住|别忘了|以后|每次|另外|对了|注意)[:：,，]?\s*/, '').trim();
-    if (rule.length < 3 || rule.length > 200) return;
+    const t = text.trim();
+
+    // 1) 高置信度指令：用冒号/逗号明确引出规则内容（如"记住：…""固定规则：…"）
+    const explicit = t.match(/^(?:请|帮我|帮我记住|给我)?\s*(?:记住|记一下|记好|记牢|固定规则|规则|规矩|规定)\s*[:：]\s*(.+)$/);
+    // 2) "以后/每次都…"类长期行为约定，必须带"都/每次/一直/始终/今后"等长期副词才算
+    const longterm = t.match(/^(?:以后|今后|接下来|从现在起)\s*(?:都|每次|一律|全部)?[^。！？]{2,}?$/);
+    const always = /^(?:每次|每次回答|一直都要|始终|永远)\s*[^。！？]{2,}$/.test(t);
+    // 3) "别再/不要再/不许/不准 + 明确动作"的禁止类指令
+    const forbid = /^(?:别再|不要再|不许|不准|禁止|以后别|以后不要)[^。！？]{2,}$/.test(t);
+    // 4) 明确的"规则是…/我的要求是…/按我的规则…/改成…"整句指令
+    const declare = /^(?:规则是|规矩是|要求是|我的要求是|我要求|按我的规则|从今以后|更正[:：]?|纠正[:：]?|我说错了|应该是|正确的是)[^。！？]{2,}$/.test(t);
+
+    if (!explicit && !longterm && !always && !forbid && !declare) return;
+
+    // 取规则正文：优先冒号后内容；否则整句保留，再剥掉声明类前缀让规则更干净
+    let rule = explicit ? explicit[1] : t;
+    rule = rule.replace(/^[,，:：\s]+/, '')
+               .replace(/^(?:规则是|规矩是|要求是|我的要求是|我要求|按我的规则|从今以后|更正|纠正|我说错了|应该是|正确的是)\s*[:：,，]?\s*/, '')
+               .trim();
+    if (rule.length < 2 || rule.length > 200) return;
+    // 明显是提问/闲聊的排掉
+    if (/[？?]$/.test(rule)) return;
+
     const added = await addRule(rule);
     if (added) toast('📌 已记住这条规则，以后每次都会遵守（记忆页可删除）', 3200);
   }
