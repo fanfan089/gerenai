@@ -347,6 +347,7 @@ ${convo}
     if ($('#emptyChat') && !$('#emptyChat').hidden) $('#emptyChat').hidden = true;
     const wrap = document.createElement('div');
     wrap.className = 'msg ' + (m.role === 'user' ? 'me' : 'ai');
+    wrap.dataset.msgid = m.id || '';
     const avatar = m.role === 'user' ? '我' : '🎓';
     const name = m.role === 'user' ? '' : '<div class="msg-name">我的 AI 助手</div>';
     const imgsHtml = (!streamEl && m.images && m.images.length)
@@ -354,8 +355,9 @@ ${convo}
     const voiceBtn = m.role === 'assistant'
       ? `<button class="voice-btn" data-voice title="朗读这条回复"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1-3.29-2.5-4.03v8.05c1.5-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg><span class="voice-label">朗读</span></button>`
       : '';
+    const copyBtn = `<button class="voice-btn msg-copy-btn" data-copy title="复制这条消息"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M16 1H4a2 2 0 00-2 2v14h2V3h12V1zm3 4H8a2 2 0 00-2 2v14a2 2 0 002 2h11a2 2 0 002-2V7a2 2 0 00-2-2zm0 16H8V7h11v14z"/></svg><span class="copy-label">复制</span></button>`;
     const delBtn = `<button class="msg-del-btn" data-del="${m.id || ''}" title="删除这条消息" aria-label="删除这条消息"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></button>`;
-    const actionsRow = `<div class="msg-actions">${voiceBtn}${delBtn}</div>`;
+    const actionsRow = `<div class="msg-actions">${voiceBtn}${copyBtn}${delBtn}</div>`;
     // 历史消息：有思考内容则渲染可折叠块（默认收起）
     const reasoningFold = (!streamEl && m.reasoning) ? reasoningFoldHTML(m.reasoning) : '';
     wrap.innerHTML = `
@@ -620,6 +622,103 @@ ${convo}
     if (typeof c === 'string') return c;
     if (Array.isArray(c)) return c.map(p => p && p.type === 'text' ? (p.text || '') : (p && p.type === 'image_url' ? '（用户发送了一张图片）' : '')).join('\n');
     return String(c || '');
+  }
+
+  // 复制文本到剪贴板（优先 Clipboard API，退化到 execCommand）
+  async function copyText(text) {
+    try {
+      if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(text); return true; }
+    } catch (e) {}
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); } catch (e) {}
+    ta.remove();
+    return true;
+  }
+
+  // 分享/导出整段对话：优先系统分享，退化到复制
+  async function shareChat() {
+    const lines = state.messages.filter(m => m.role !== 'system').map(m =>
+      (m.role === 'user' ? '我：' : 'AI：') + toPlainText(m.content)
+    );
+    const text = lines.join('\n\n') || '（空对话）';
+    try {
+      if (navigator.share) { await navigator.share({ title: '对话记录', text }); return; }
+      await copyText(text);
+      toast('对话已复制到剪贴板');
+    } catch (e) { /* 用户取消分享 */ }
+  }
+
+  // 长按消息弹出操作菜单：复制 / 分享 / 朗读 / 删除
+  function bindMsgLongPress() {
+    const list = $('#msgList');
+    const menu = $('#msgMenu');
+    if (!list || !menu) return;
+    let pressId = null, timer = null, startX = 0, startY = 0;
+
+    const showMenu = (id, x, y) => {
+      const m = state.messages.find(mm => mm.id === id);
+      if (!m) return;
+      pressId = id;
+      // AI 消息才提供朗读
+      menu.querySelector('[data-mm="voice"]').hidden = m.role !== 'assistant';
+      menu.hidden = false;
+      const w = menu.offsetWidth || 160, h = menu.offsetHeight || 180;
+      menu.style.left = Math.max(6, Math.min(x, window.innerWidth - w - 8)) + 'px';
+      menu.style.top = Math.max(6, Math.min(y, window.innerHeight - h - 8)) + 'px';
+    };
+    const hideMenu = () => { menu.hidden = true; pressId = null; };
+
+    list.addEventListener('touchstart', e => {
+      const node = e.target.closest('.msg');
+      if (!node) return;
+      const t = e.touches[0];
+      startX = t.clientX; startY = t.clientY;
+      clearTimeout(timer);
+      timer = setTimeout(() => showMenu(node.dataset.msgid, t.clientX, t.clientY), 550);
+    }, { passive: true });
+    list.addEventListener('touchmove', e => {
+      const t = e.touches[0];
+      if (t && (Math.abs(t.clientX - startX) > 10 || Math.abs(t.clientY - startY) > 10)) clearTimeout(timer);
+    }, { passive: true });
+    ['touchend', 'touchcancel'].forEach(ev => list.addEventListener(ev, () => clearTimeout(timer), { passive: true }));
+    // 右键也能唤出（方便桌面端）
+    list.addEventListener('contextmenu', e => {
+      const node = e.target.closest('.msg');
+      if (!node) return;
+      e.preventDefault();
+      showMenu(node.dataset.msgid, e.clientX, e.clientY);
+    });
+
+    menu.addEventListener('click', async e => {
+      const btn = e.target.closest('[data-mm]');
+      if (!btn) return;
+      const act = btn.dataset.mm;
+      const m = state.messages.find(mm => mm.id === pressId);
+      hideMenu();
+      if (!m) return;
+      if (act === 'copy') {
+        await copyText(toPlainText(m.content));
+        toast('已复制这条消息');
+      } else if (act === 'share') {
+        const text = (m.role === 'user' ? '我：' : 'AI：') + toPlainText(m.content);
+        try {
+          if (navigator.share) await navigator.share({ title: '分享消息', text });
+          else { await copyText(text); toast('已复制到剪贴板'); }
+        } catch (e) {}
+      } else if (act === 'voice') {
+        const node = $$('#msgList .msg').find(n => n.dataset.msgid === m.id);
+        const vb = node && node.querySelector('[data-voice]');
+        if (vb) toggleSpeech(vb); else toast('这条暂时无法朗读');
+      } else if (act === 'del') {
+        deleteMessage(m.id);
+      }
+    });
+    // 点空白处关闭
+    document.addEventListener('click', e => {
+      if (!menu.hidden && !e.target.closest('#msgMenu')) hideMenu();
+    });
   }
 
   // 依据「模型策略」生成本次请求的执行计划
@@ -1587,9 +1686,10 @@ ${convo}
     // 菜单项点击后收起（具体操作由各自的监听器处理）
     $$('#moreMenu .more-item').forEach(it => it.addEventListener('click', () => { moreMenu.hidden = true; }));
     $$('.tab').forEach(t => t.addEventListener('click', () => go(t.dataset.view)));
-    $('#sendBtn').addEventListener('click', () => { const v = $('#input').value; $('#input').value = ''; send(v); });
+    const clearInput = () => { const el = $('#input'); el.value = ''; el.style.height = 'auto'; };
+    $('#sendBtn').addEventListener('click', () => { const v = $('#input').value; clearInput(); send(v); });
     $('#input').addEventListener('keydown', e => {
-      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); const v = e.target.value; e.target.value = ''; send(v); }
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); const v = e.target.value; clearInput(); send(v); }
     });
     $('#input').addEventListener('input', e => {
       e.target.style.height = 'auto';
@@ -1621,9 +1721,19 @@ ${convo}
       renderPendingImages();
     });
     // 点击消息里的图片 → 放大预览（事件委托）
-    $('#msgList').addEventListener('click', e => {
+    $('#msgList').addEventListener('click', async e => {
       const vb = e.target.closest('[data-voice]');
       if (vb) { toggleSpeech(vb); return; }
+      const cp = e.target.closest('[data-copy]');
+      if (cp) {
+        const bubble = cp.closest('.msg')?.querySelector('.bubble');
+        const text = bubble ? toPlainText(bubble.innerText || bubble.textContent) : '';
+        await copyText(text);
+        const label = cp.querySelector('.copy-label');
+        if (label) { label.textContent = '已复制'; setTimeout(() => label.textContent = '复制', 1500); }
+        toast('已复制这条消息');
+        return;
+      }
       const delBtn = e.target.closest('[data-del]');
       if (delBtn) { deleteMessage(delBtn.dataset.del); return; }
       const foldHead = e.target.closest('[data-reasoning-fold]');
@@ -1645,6 +1755,8 @@ ${convo}
       $('#imgModal').hidden = false;
     });
 
+    $('#btnShareChat')?.addEventListener('click', shareChat);
+    bindMsgLongPress();
     $('#btnClearChat').addEventListener('click', async () => {
       if (!confirm('清空当前对话记录？（长期记忆档案和摘要会保留）')) return;
       const id = activeKey();

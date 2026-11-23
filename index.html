@@ -36,9 +36,6 @@
       <button class="icon-btn" id="btnNewChat" title="开启新对话" aria-label="开启新对话">
         <svg viewBox="0 0 24 24" width="19" height="19"><path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
       </button>
-      <button class="icon-btn" id="btnShareChat" title="分享/导出对话" aria-label="分享/导出对话">
-        <svg viewBox="0 0 24 24" width="19" height="19"><path fill="currentColor" d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92-1.31-2.92-2.92-2.92z"/></svg>
-      </button>
       <span class="mem-chip" id="memChip" title="记忆状态">
         <span class="mem-chip-dot"></span><span id="memChipText">记忆已开启</span>
       </span>
@@ -77,6 +74,7 @@
             <button class="tool-btn more-trigger" id="btnMore" title="更多操作" aria-label="更多操作">⋯</button>
             <div class="more-menu" id="moreMenu" hidden>
               <button class="more-item" id="btnSync"><span class="mi-ico">☁️</span>一键同步</button>
+              <button class="more-item" id="btnShareChat"><span class="mi-ico">📤</span>分享/导出对话</button>
               <button class="more-item" id="btnMemoryHint"><span class="mi-ico">🧠</span>查看记忆</button>
               <button class="more-item danger" id="btnClearChat"><span class="mi-ico">🗑</span>清空对话</button>
             </div>
@@ -305,6 +303,14 @@
 <div class="modal" id="imgModal" hidden>
   <div class="modal-mask" data-close></div>
   <div class="img-preview-wrap" data-close><img id="imgPreview" src="" alt="图片预览"></div>
+</div>
+
+<!-- 长按消息弹出菜单 -->
+<div id="msgMenu" class="msg-menu" hidden>
+  <button data-mm="copy">📋 复制这条</button>
+  <button data-mm="share">📤 分享这条</button>
+  <button data-mm="voice">🔊 朗读</button>
+  <button data-mm="del" class="danger">🗑 删除</button>
 </div>
 
 <!-- Toast -->
